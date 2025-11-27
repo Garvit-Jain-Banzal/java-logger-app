@@ -1,0 +1,51 @@
+name: Build and Deploy WAR
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: java-logger-app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Temurin JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build WAR with Maven
+        run: mvn -B clean package
+
+      - name: Upload WAR to remote server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.TOMCAT_HOST }}
+          username: ${{ secrets.TOMCAT_USER }}
+          key: ${{ secrets.TOMCAT_SSH_KEY }}
+          source: java-logger-app/target/continuous-logger.war
+          target: ${{ secrets.TOMCAT_UPLOAD_DIR }}
+
+      - name: Deploy WAR into Tomcat
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.TOMCAT_HOST }}
+          username: ${{ secrets.TOMCAT_USER }}
+          key: ${{ secrets.TOMCAT_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            sudo systemctl stop ${{ secrets.TOMCAT_SERVICE }}
+            sudo mv ${{ secrets.TOMCAT_UPLOAD_DIR }}/continuous-logger.war ${{ secrets.TOMCAT_WEBAPPS_DIR }}/continuous-logger.war
+            sudo chown ${{ secrets.TOMCAT_OWNER }}:${{ secrets.TOMCAT_OWNER }} ${{ secrets.TOMCAT_WEBAPPS_DIR }}/continuous-logger.war
+            sudo systemctl start ${{ secrets.TOMCAT_SERVICE }}
+
